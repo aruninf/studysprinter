@@ -5,6 +5,7 @@ const DECKS_KEY = "studysprinter_guest_decks";
 const DISMISSED_EXAMPLES_KEY = "studysprinter_dismissed_examples";
 const EXAMPLE_STATS_KEY = "studysprinter_example_stats";
 const EXAMPLE_FIRST_SEEN_KEY = "studysprinter_example_first_seen";
+const PINNED_EXAMPLES_KEY = "studysprinter_pinned_examples";
 
 function generateId() {
   return "guest-" + Math.random().toString(36).substr(2, 9) + "-" + Date.now();
@@ -190,6 +191,18 @@ export function getGuestDeckStats(id) {
   };
 }
 
+export function toggleExamplePin(id) {
+  const pinned = JSON.parse(localStorage.getItem(PINNED_EXAMPLES_KEY) || "[]");
+  const isPinned = pinned.includes(id);
+  const updated = isPinned ? pinned.filter((p) => p !== id) : [...pinned, id];
+  localStorage.setItem(PINNED_EXAMPLES_KEY, JSON.stringify(updated));
+  return { pinned: !isPinned };
+}
+
+export function getPinnedExamples() {
+  return JSON.parse(localStorage.getItem(PINNED_EXAMPLES_KEY) || "[]");
+}
+
 // Get all raw decks (used for migration prompt on login)
 export function getAllGuestDecks() {
   return getDecks();
@@ -198,4 +211,8 @@ export function getAllGuestDecks() {
 // Clear all guest data (called after migration or on login regardless)
 export function clearGuestData() {
   localStorage.removeItem(DECKS_KEY);
+  localStorage.removeItem(DISMISSED_EXAMPLES_KEY);
+  localStorage.removeItem(EXAMPLE_STATS_KEY);
+  localStorage.removeItem(EXAMPLE_FIRST_SEEN_KEY);
+  localStorage.removeItem(PINNED_EXAMPLES_KEY);
 }

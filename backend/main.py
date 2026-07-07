@@ -78,6 +78,9 @@ class ImportRequest(BaseModel):
     summary: str
     flashcards: list[dict]
     quiz: list[dict]
+    best_score: Optional[int] = None
+    times_reviewed: Optional[int] = None
+    pinned: bool = False
 
 
 @app.get("/")
@@ -203,7 +206,8 @@ def import_deck(body: ImportRequest, authorization: Optional[str] = Header(None)
         "title": body.title,
         "notes": body.notes,
         "summary": body.summary,
-        "user_id": user_id
+        "user_id": user_id,
+        "pinned": body.pinned
     }).execute()
 
     study_set_id = study_set.data[0]["id"]
@@ -225,6 +229,13 @@ def import_deck(body: ImportRequest, authorization: Optional[str] = Header(None)
         for i, q in enumerate(body.quiz)
     ]
     supabase.table("quiz_questions").insert(quiz_to_insert).execute()
+
+    if body.times_reviewed and body.times_reviewed > 0:
+        supabase.table("deck_stats").insert({
+            "study_set_id": study_set_id,
+            "quiz_score": body.best_score,
+            "cards_reviewed": 0
+        }).execute()
 
     return {"status": "imported", "id": study_set_id}
 

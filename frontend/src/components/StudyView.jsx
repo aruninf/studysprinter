@@ -5,7 +5,12 @@ import StatsTab from "./StatsTab";
 import { recordStats } from "../api/claude";
 import { recordGuestStats } from "../guestStorage";
 
-export default function StudyView({ deck, onStatsRecorded, isGuest }) {
+export default function StudyView({
+  deck,
+  onStatsRecorded,
+  isGuest,
+  globalStatsKey = 0,
+}) {
   const [activeTab, setActiveTab] = useState("flashcards");
   const [statsKey, setStatsKey] = useState(0);
 
@@ -76,7 +81,11 @@ export default function StudyView({ deck, onStatsRecorded, isGuest }) {
           <QuizTab quiz={deck.quiz} onScore={handleScore} />
         </div>
         <div style={{ display: activeTab === "stats" ? "block" : "none" }}>
-          <StatsTab deckId={deck.id} lastUpdated={statsKey} isGuest={isGuest} />
+          <StatsTab
+            deckId={deck.id}
+            lastUpdated={statsKey + globalStatsKey}
+            isGuest={isGuest}
+          />{" "}
         </div>
         <div style={{ display: activeTab === "notes" ? "block" : "none" }}>
           <div className="notes-view">

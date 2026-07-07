@@ -59,6 +59,96 @@ body.dark .nav-brand {
   color: rgba(255, 255, 255, 0.75);
 }
 
+.save-nudge-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-nudge {
+  position: relative;
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+body.dark .save-nudge {
+  background: #1c1c1c;
+  border: 1px solid #2a2a2a;
+}
+
+.save-nudge-title {
+  font-family: "Geist", sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1c1c1c;
+  margin-bottom: 8px;
+}
+
+body.dark .save-nudge-title {
+  color: #d1d1d1;
+}
+
+.save-nudge-sub {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.save-nudge-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.save-nudge-signin {
+  padding: 10px 20px;
+  background: #059669;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.save-nudge-signin:hover {
+  background: #047857;
+}
+
+.save-nudge-dismiss {
+  padding: 10px 20px;
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-nudge-dismiss:hover {
+  border-color: #9ca3af;
+}
+
+body.dark .save-nudge-dismiss {
+  border-color: #2a2a2a;
+  color: #9ca3af;
+}
+
 .theme-btn {
   width: 32px;
   height: 32px;

@@ -8,6 +8,7 @@ import {
   faPlus,
   faSun,
   faMoon,
+  faXmark,
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles/base.css";
 import "./styles/sidebar.css";
@@ -38,6 +39,8 @@ import {
   clearGuestData,
   dismissExampleDeck,
   getDismissedExamples,
+  toggleExamplePin,
+  getPinnedExamples,
 } from "./guestStorage";
 
 export default function App() {
@@ -47,27 +50,30 @@ export default function App() {
   const [decks, setDecks] = useState([]);
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [view, setView] = useState("empty");
+  const [globalStatsKey, setGlobalStatsKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
-  const [sidebarAnimating, setSidebarAnimating] = useState(false);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [migrating, setMigrating] = useState(false);
+  const [showSaveNudge, setShowSaveNudge] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] =
     useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
-  const [pendingGuestDecks, setPendingGuestDecks] = useState([]);
+  const nudgeShownRef = React.useRef(false);
 
   useEffect(() => {
     document.body.classList.toggle("dark", dark);
   }, [dark]);
 
   useEffect(() => {
-    fetchDecks();
-  }, [user]);
+    if (!migrating) {
+      fetchDecks();
+    }
+  }, [user, migrating]);
 
   useEffect(() => {
     function handleResize() {
@@ -107,11 +113,12 @@ export default function App() {
       // When a guest logs in, check for local decks to migrate
       if (newUser && _event === "SIGNED_IN") {
         const guestDecks = getAllGuestDecks();
+        clearGuestData();
         if (guestDecks.length > 0) {
-          setPendingGuestDecks(guestDecks);
-          setShowMigrationPrompt(true);
-        } else {
-          clearGuestData();
+          setMigrating(true);
+          setLoading(true); // force loading state immediately
+          setDecks([]);
+          handleMigrateDecks(guestDecks, newUser);
         }
       }
     });
@@ -121,23 +128,28 @@ export default function App() {
   async function fetchDecks() {
     setLoading(true);
     try {
-      const dismissed = getDismissedExamples();
-      const exampleStats = JSON.parse(
-        localStorage.getItem("studysprinter_example_stats") || "{}",
-      );
-      const examples = EXAMPLE_DECKS.filter(
-        (d) => !dismissed.includes(d.id),
-      ).map((d) => ({
-        ...d,
-        created_at: getExampleFirstSeen(d.id),
-        last_studied: exampleStats[d.id]?.last_reviewed || null,
-      }));
-
-      const data = user
-        ? await getStudySets()
-        : [...getGuestStudySets(), ...examples];
-
+      let data;
+      if (user) {
+        data = await getStudySets();
+      } else {
+        const dismissed = getDismissedExamples();
+        const pinnedExamples = getPinnedExamples();
+        const exampleStats = JSON.parse(
+          localStorage.getItem("studysprinter_example_stats") || "{}",
+        );
+        const examples = EXAMPLE_DECKS.filter(
+          (d) => !dismissed.includes(d.id),
+        ).map((d) => ({
+          ...d,
+          created_at: getExampleFirstSeen(d.id),
+          last_studied: exampleStats[d.id]?.last_reviewed || null,
+          pinned: pinnedExamples.includes(d.id),
+        }));
+        data = [...getGuestStudySets(), ...examples];
+      }
       const sorted = data.sort((a, b) => {
+        if ((a.pinned || false) !== (b.pinned || false))
+          return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
         const aDate = a.last_studied || a.created_at;
         const bDate = b.last_studied || b.created_at;
         return new Date(bDate) - new Date(aDate);
@@ -182,11 +194,17 @@ export default function App() {
   async function handleDeleteAccount() {
     try {
       await deleteAccount();
-      await supabase.auth.signOut();
     } catch (e) {
       console.error(e);
       alert("Failed to delete account. Please try again.");
+      return;
     }
+    setShowDeleteAccountConfirm(false);
+    // Clear Supabase session from localStorage manually
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith("sb-")) localStorage.removeItem(key);
+    });
+    setUser(null);
   }
 
   async function handleDeleteDeck(id) {
@@ -208,7 +226,20 @@ export default function App() {
   }
 
   async function handlePinDeck(id) {
-    if (EXAMPLE_DECKS.find((d) => d.id === id)) return;
+    if (EXAMPLE_DECKS.find((d) => d.id === id)) {
+      const result = toggleExamplePin(id);
+      setDecks((prev) => {
+        const updated = prev.map((d) =>
+          d.id === id ? { ...d, pinned: result.pinned } : d,
+        );
+        const pinned = updated.filter((d) => d.pinned);
+        const unpinned = updated
+          .filter((d) => !d.pinned)
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return [...pinned, ...unpinned];
+      });
+      return;
+    }
     try {
       const result = user ? await togglePin(id) : toggleGuestPin(id);
       setDecks((prev) => {
@@ -232,6 +263,10 @@ export default function App() {
       setDecks([savedDeck, ...decks]);
       setSelectedDeck(savedDeck);
       setView("study");
+      if (!nudgeShownRef.current) {
+        setShowSaveNudge(true);
+        nudgeShownRef.current = true;
+      }
       return;
     }
     setDecks([deck, ...decks]);
@@ -239,41 +274,50 @@ export default function App() {
     setView("study");
   }
 
-  async function handleMigrateDecks() {
-    // Upload each guest deck to the backend
-    for (const deck of pendingGuestDecks) {
-      try {
-        await fetch(
-          `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/import`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
-            },
-            body: JSON.stringify({
-              title: deck.title,
-              notes: deck.notes,
-              summary: deck.summary,
-              flashcards: deck.flashcards,
-              quiz: deck.quiz,
-            }),
-          },
-        );
-      } catch (e) {
-        console.error("Failed to migrate deck:", deck.title, e);
-      }
-    }
-    clearGuestData();
-    setShowMigrationPrompt(false);
-    setPendingGuestDecks([]);
-    fetchDecks();
-  }
+  async function handleMigrateDecks(decksToMigrate, currentUser) {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
 
-  function handleSkipMigration() {
-    clearGuestData();
-    setShowMigrationPrompt(false);
-    setPendingGuestDecks([]);
+    const exampleStats = JSON.parse(
+      localStorage.getItem("studysprinter_example_stats") || "{}",
+    );
+
+    // Wait for ALL imports to finish before doing anything else
+    await Promise.all(
+      decksToMigrate.map(async (deck) => {
+        try {
+          const deckStats = deck.stats ||
+            exampleStats[deck.id] || { times_reviewed: 0, best_score: null };
+          await fetch(
+            `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/import`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                title: deck.title,
+                notes: deck.notes,
+                summary: deck.summary,
+                flashcards: deck.flashcards,
+                quiz: deck.quiz,
+                best_score: deckStats.best_score,
+                times_reviewed: deckStats.times_reviewed,
+                pinned: deck.pinned || false,
+              }),
+            },
+          );
+        } catch (e) {
+          console.error("Failed to migrate deck:", deck.title, e);
+        }
+      }),
+    );
+
+    setSelectedDeck(null);
+    setView("empty");
+    fetchDecks();
+    setGlobalStatsKey((prev) => prev + 1);
+    setMigrating(false);
   }
 
   if (passwordRecovery) {
@@ -317,17 +361,29 @@ export default function App() {
                       src={user.user_metadata.avatar_url}
                       alt="avatar"
                       style={{ width: 20, height: 20, borderRadius: "50%" }}
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                        e.target.nextSibling.style.display = "inline";
+                      }}
                     />
-                  ) : (
-                    <FontAwesomeIcon icon={faUser} />
-                  )}
+                  ) : null}
+                  <FontAwesomeIcon
+                    icon={faUser}
+                    style={{
+                      display: user?.user_metadata?.avatar_url
+                        ? "none"
+                        : "inline",
+                    }}
+                  />
                 </button>
                 {showUserMenu && (
                   <div className="user-menu">
                     <div className="user-menu-email">{user?.email}</div>
                     <button
                       className="user-menu-item"
-                      onClick={() => supabase.auth.signOut()}>
+                      onClick={() => {
+                        supabase.auth.signOut();
+                      }}>
                       Sign out
                     </button>
                     <button
@@ -370,6 +426,39 @@ export default function App() {
           }}
         />
         <main className="main-content">
+          {showSaveNudge && !user && (
+            <div
+              className="save-nudge-overlay"
+              onClick={() => setShowSaveNudge(false)}>
+              <div className="save-nudge" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="login-modal-close"
+                  onClick={() => setShowSaveNudge(false)}>
+                  <FontAwesomeIcon icon={faXmark} />
+                </button>
+                <div className="save-nudge-title">Deck created!</div>
+                <div className="save-nudge-sub">
+                  Sign in to save your deck to your account and access it from
+                  any device.
+                </div>
+                <div className="save-nudge-actions">
+                  <button
+                    className="save-nudge-dismiss"
+                    onClick={() => setShowSaveNudge(false)}>
+                    Not now
+                  </button>
+                  <button
+                    className="save-nudge-signin"
+                    onClick={() => {
+                      setShowSaveNudge(false);
+                      setShowLoginModal(true);
+                    }}>
+                    Sign in
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {view !== "create" && (
             <button
               className="mobile-fab"
@@ -404,6 +493,7 @@ export default function App() {
               deck={selectedDeck}
               onStatsRecorded={handleStatsRecorded}
               isGuest={!user}
+              globalStatsKey={globalStatsKey}
             />
           )}
         </main>
@@ -421,32 +511,6 @@ export default function App() {
               onSuccess={() => setShowLoginModal(false)}
               onClose={() => setShowLoginModal(false)}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Migration prompt */}
-      {showMigrationPrompt && (
-        <div className="delete-overlay">
-          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="delete-modal-title">Save your decks?</div>
-            <div className="delete-modal-sub">
-              You have {pendingGuestDecks.length} deck
-              {pendingGuestDecks.length !== 1 ? "s" : ""} saved locally. Would
-              you like to save {pendingGuestDecks.length !== 1 ? "them" : "it"}{" "}
-              to your account so you can access{" "}
-              {pendingGuestDecks.length !== 1 ? "them" : "it"} anywhere?
-            </div>
-            <div className="delete-modal-actions">
-              <button
-                className="delete-cancel-btn"
-                onClick={handleSkipMigration}>
-                No thanks
-              </button>
-              <button className="btn-primary" onClick={handleMigrateDecks}>
-                Save to account
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -10,9 +10,10 @@ export default function StatsTab({ deckId, lastUpdated, isGuest }) {
     async function fetchStats() {
       setLoading(true);
       try {
-        const data = isGuest
-          ? getGuestDeckStats(deckId)
-          : await getDeckStats(deckId);
+        const data =
+          isGuest || deckId.startsWith("example-")
+            ? getGuestDeckStats(deckId)
+            : await getDeckStats(deckId);
         setStats(data);
       } catch (e) {
         console.error(e);

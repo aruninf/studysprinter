@@ -1,16 +1,4 @@
 /* Login */
-.login-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: #f9fafb;
-}
-
-body.dark .login-page {
-  background: #141414;
-}
-
 .login-card {
   background: white;
   border: 1px solid #e5e7eb;
@@ -20,6 +8,7 @@ body.dark .login-page {
   width: 90%;
   text-align: center;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  position: relative;
 }
 
 body.dark .login-card {
@@ -178,4 +167,43 @@ body.dark .login-google-btn {
 }
 body.dark .login-google-btn:hover {
   background: #333333;
+}
+
+/* Login modal overlay */
+.login-modal-container {
+  position: relative;
+  width: 90%;
+  max-width: 480px;
+}
+
+.login-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #6b7280;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.login-modal-close:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+body.dark .login-modal-close {
+  color: #9ca3af;
+}
+
+body.dark .login-modal-close:hover {
+  background: #2a2a2a;
+  color: #d1d1d1;
 }

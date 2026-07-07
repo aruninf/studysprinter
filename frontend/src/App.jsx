@@ -19,7 +19,7 @@ import Sidebar from "./components/Sidebar";
 import CreateDeck from "./components/CreateDeck";
 import StudyView from "./components/StudyView";
 import ResetPassword from "./components/ResetPassword";
-
+import { EXAMPLE_DECKS } from "./exampleDecks";
 import {
   getStudySets,
   getStudySet,
@@ -27,6 +27,18 @@ import {
   togglePin,
   deleteAccount,
 } from "./api/claude";
+import {
+  getGuestStudySets,
+  getGuestStudySet,
+  getExampleFirstSeen,
+  deleteGuestStudySet,
+  toggleGuestPin,
+  saveGuestDeck,
+  getAllGuestDecks,
+  clearGuestData,
+  dismissExampleDeck,
+  getDismissedExamples,
+} from "./guestStorage";
 
 export default function App() {
   const [dark, setDark] = useState(
@@ -39,20 +51,22 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
-
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] =
     useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
+  const [pendingGuestDecks, setPendingGuestDecks] = useState([]);
 
   useEffect(() => {
     document.body.classList.toggle("dark", dark);
   }, [dark]);
 
   useEffect(() => {
-    if (user) fetchDecks();
+    fetchDecks();
   }, [user]);
 
   useEffect(() => {
@@ -82,23 +96,47 @@ export default function App() {
       setUser(session?.user ?? null);
       setAuthLoading(false);
     });
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const newUser = session?.user ?? null;
+      setUser(newUser);
       if (_event === "PASSWORD_RECOVERY") {
         setPasswordRecovery(true);
       }
+      // When a guest logs in, check for local decks to migrate
+      if (newUser && _event === "SIGNED_IN") {
+        const guestDecks = getAllGuestDecks();
+        if (guestDecks.length > 0) {
+          setPendingGuestDecks(guestDecks);
+          setShowMigrationPrompt(true);
+        } else {
+          clearGuestData();
+        }
+      }
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
   async function fetchDecks() {
     setLoading(true);
     try {
-      const data = await getStudySets();
+      const dismissed = getDismissedExamples();
+      const exampleStats = JSON.parse(
+        localStorage.getItem("studysprinter_example_stats") || "{}",
+      );
+      const examples = EXAMPLE_DECKS.filter(
+        (d) => !dismissed.includes(d.id),
+      ).map((d) => ({
+        ...d,
+        created_at: getExampleFirstSeen(d.id),
+        last_studied: exampleStats[d.id]?.last_reviewed || null,
+      }));
+
+      const data = user
+        ? await getStudySets()
+        : [...getGuestStudySets(), ...examples];
+
       const sorted = data.sort((a, b) => {
         const aDate = a.last_studied || a.created_at;
         const bDate = b.last_studied || b.created_at;
@@ -115,7 +153,14 @@ export default function App() {
   async function handleSelectDeck(id) {
     try {
       setSelectedDeck(null);
-      const data = await getStudySet(id);
+      const exampleDeck = EXAMPLE_DECKS.find((d) => d.id === id);
+      if (exampleDeck) {
+        setSelectedDeck(exampleDeck);
+        setView("study");
+        if (window.innerWidth <= 768) setSidebarOpen(false);
+        return;
+      }
+      const data = user ? await getStudySet(id) : getGuestStudySet(id);
       const sidebarDeck = decks.find((d) => d.id === id);
       setSelectedDeck({ ...data, created_at: sidebarDeck?.created_at });
       setView("study");
@@ -145,7 +190,16 @@ export default function App() {
   }
 
   async function handleDeleteDeck(id) {
-    await deleteStudySet(id);
+    if (EXAMPLE_DECKS.find((d) => d.id === id)) {
+      dismissExampleDeck(id);
+      setDecks(decks.filter((d) => d.id !== id));
+      if (selectedDeck?.id === id) {
+        setSelectedDeck(null);
+        setView("empty");
+      }
+      return;
+    }
+    user ? await deleteStudySet(id) : deleteGuestStudySet(id);
     setDecks(decks.filter((d) => d.id !== id));
     if (selectedDeck?.id === id) {
       setSelectedDeck(null);
@@ -154,8 +208,9 @@ export default function App() {
   }
 
   async function handlePinDeck(id) {
+    if (EXAMPLE_DECKS.find((d) => d.id === id)) return;
     try {
-      const result = await togglePin(id);
+      const result = user ? await togglePin(id) : toggleGuestPin(id);
       setDecks((prev) => {
         const updated = prev.map((d) =>
           d.id === id ? { ...d, pinned: result.pinned } : d,
@@ -172,16 +227,59 @@ export default function App() {
   }
 
   function handleDeckCreated(deck) {
+    if (!user) {
+      const savedDeck = saveGuestDeck(deck);
+      setDecks([savedDeck, ...decks]);
+      setSelectedDeck(savedDeck);
+      setView("study");
+      return;
+    }
     setDecks([deck, ...decks]);
     setSelectedDeck(deck);
     setView("study");
+  }
+
+  async function handleMigrateDecks() {
+    // Upload each guest deck to the backend
+    for (const deck of pendingGuestDecks) {
+      try {
+        await fetch(
+          `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/import`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
+            },
+            body: JSON.stringify({
+              title: deck.title,
+              notes: deck.notes,
+              summary: deck.summary,
+              flashcards: deck.flashcards,
+              quiz: deck.quiz,
+            }),
+          },
+        );
+      } catch (e) {
+        console.error("Failed to migrate deck:", deck.title, e);
+      }
+    }
+    clearGuestData();
+    setShowMigrationPrompt(false);
+    setPendingGuestDecks([]);
+    fetchDecks();
+  }
+
+  function handleSkipMigration() {
+    clearGuestData();
+    setShowMigrationPrompt(false);
+    setPendingGuestDecks([]);
   }
 
   if (passwordRecovery) {
     return <ResetPassword onComplete={() => setPasswordRecovery(false)} />;
   }
   if (authLoading) return null;
-  if (!user) return <Login />;
 
   return (
     <div className="layout">
@@ -208,37 +306,47 @@ export default function App() {
             <FontAwesomeIcon icon={dark ? faSun : faMoon} />
           </button>
           <div style={{ position: "relative" }}>
-            <button
-              className="theme-btn"
-              onClick={() => setShowUserMenu((p) => !p)}
-              title="Account">
-              {user?.user_metadata?.avatar_url ? (
-                <img
-                  src={user.user_metadata.avatar_url}
-                  alt="avatar"
-                  style={{ width: 20, height: 20, borderRadius: "50%" }}
-                />
-              ) : (
-                <FontAwesomeIcon icon={faUser} />
-              )}
-            </button>
-            {showUserMenu && (
-              <div className="user-menu">
-                <div className="user-menu-email">{user?.email}</div>
+            {user ? (
+              <>
                 <button
-                  className="user-menu-item"
-                  onClick={() => supabase.auth.signOut()}>
-                  Sign out
+                  className="theme-btn"
+                  onClick={() => setShowUserMenu((p) => !p)}
+                  title="Account">
+                  {user?.user_metadata?.avatar_url ? (
+                    <img
+                      src={user.user_metadata.avatar_url}
+                      alt="avatar"
+                      style={{ width: 20, height: 20, borderRadius: "50%" }}
+                    />
+                  ) : (
+                    <FontAwesomeIcon icon={faUser} />
+                  )}
                 </button>
-                <button
-                  className="user-menu-item user-menu-item-danger"
-                  onClick={() => {
-                    setShowUserMenu(false);
-                    setShowDeleteAccountConfirm(true);
-                  }}>
-                  Delete account
-                </button>
-              </div>
+                {showUserMenu && (
+                  <div className="user-menu">
+                    <div className="user-menu-email">{user?.email}</div>
+                    <button
+                      className="user-menu-item"
+                      onClick={() => supabase.auth.signOut()}>
+                      Sign out
+                    </button>
+                    <button
+                      className="user-menu-item user-menu-item-danger"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setShowDeleteAccountConfirm(true);
+                      }}>
+                      Delete account
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                className="nav-signin-btn"
+                onClick={() => setShowLoginModal(true)}>
+                Sign in
+              </button>
             )}
           </div>
         </div>
@@ -295,11 +403,55 @@ export default function App() {
             <StudyView
               deck={selectedDeck}
               onStatsRecorded={handleStatsRecorded}
+              isGuest={!user}
             />
           )}
         </main>
       </div>
 
+      {/* Login modal overlay */}
+      {showLoginModal && (
+        <div
+          className="delete-overlay"
+          onClick={() => setShowLoginModal(false)}>
+          <div
+            className="login-modal-container"
+            onClick={(e) => e.stopPropagation()}>
+            <Login
+              onSuccess={() => setShowLoginModal(false)}
+              onClose={() => setShowLoginModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Migration prompt */}
+      {showMigrationPrompt && (
+        <div className="delete-overlay">
+          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-modal-title">Save your decks?</div>
+            <div className="delete-modal-sub">
+              You have {pendingGuestDecks.length} deck
+              {pendingGuestDecks.length !== 1 ? "s" : ""} saved locally. Would
+              you like to save {pendingGuestDecks.length !== 1 ? "them" : "it"}{" "}
+              to your account so you can access{" "}
+              {pendingGuestDecks.length !== 1 ? "them" : "it"} anywhere?
+            </div>
+            <div className="delete-modal-actions">
+              <button
+                className="delete-cancel-btn"
+                onClick={handleSkipMigration}>
+                No thanks
+              </button>
+              <button className="btn-primary" onClick={handleMigrateDecks}>
+                Save to account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete account confirmation */}
       {showDeleteAccountConfirm && (
         <div
           className="delete-overlay"

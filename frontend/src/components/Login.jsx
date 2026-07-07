@@ -5,8 +5,8 @@ import { faBookOpen } from "@fortawesome/free-solid-svg-icons";
 import "../styles/base.css";
 import "../styles/auth.css";
 
-export default function Login() {
-  const [mode, setMode] = useState("login"); // 'login' or 'signup'
+export default function Login({ onSuccess, onClose }) {
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -81,6 +81,7 @@ export default function Login() {
           }
           throw error;
         }
+        if (onSuccess) onSuccess();
       }
     } catch (e) {
       setError(e.message);
@@ -116,128 +117,131 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-logo">
-          <FontAwesomeIcon
-            icon={faBookOpen}
-            style={{ fontSize: 28, color: "white" }}
-          />
-        </div>
-        <h1 className="login-title">StudySprinter</h1>
-        <p className="login-sub">
-          {mode === "signup"
-            ? "Create an account to get started."
-            : "Turn your notes into flashcards and quizzes instantly."}
-        </p>
-        <button
-          className="login-google-btn"
-          onClick={handleGoogleLogin}
-          disabled={loading}>
-          <img
-            src="https://www.google.com/favicon.ico"
-            alt="Google"
-            width={18}
-            height={18}
-          />
-          {mode === "signup" ? "Sign up with Google" : "Sign in with Google"}
+    <div className="login-card">
+      {onClose && (
+        <button className="login-modal-close" onClick={onClose}>
+          ✕
         </button>
-        <div className="login-divider">
-          <span>or</span>
-        </div>
-
-        <input
-          className="login-input"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={loading}
+      )}
+      <div className="login-logo">
+        <FontAwesomeIcon
+          icon={faBookOpen}
+          style={{ fontSize: 28, color: "white" }}
         />
+      </div>
+      <h1 className="login-title">StudySprinter</h1>
+      <p className="login-sub">
+        {mode === "signup"
+          ? "Create an account to get started."
+          : "Turn your notes into flashcards and quizzes instantly."}
+      </p>
+      <button
+        className="login-google-btn"
+        onClick={handleGoogleLogin}
+        disabled={loading}>
+        <img
+          src="https://www.google.com/favicon.ico"
+          alt="Google"
+          width={18}
+          height={18}
+        />
+        {mode === "signup" ? "Sign up with Google" : "Sign in with Google"}
+      </button>
+      <div className="login-divider">
+        <span>or</span>
+      </div>
+
+      <input
+        className="login-input"
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={loading}
+      />
+      <input
+        className="login-input"
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleEmailAuth()}
+        disabled={loading}
+      />
+
+      {mode === "login" && (
+        <div style={{ textAlign: "right", marginBottom: 10 }}>
+          <button
+            onClick={handlePasswordReset}
+            disabled={loading}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#059669",
+              fontSize: 13,
+              cursor: "pointer",
+              padding: 0,
+            }}>
+            Forgot password?
+          </button>
+        </div>
+      )}
+
+      {mode === "signup" && (
         <input
           className="login-input"
           type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Confirm password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleEmailAuth()}
           disabled={loading}
         />
+      )}
 
-        {mode === "login" && (
-          <div style={{ textAlign: "right", marginBottom: 10 }}>
+      {error && <div className="login-error">{error}</div>}
+      {message && <div className="login-message">{message}</div>}
+
+      <button
+        className="btn-primary"
+        style={{ width: "100%", marginTop: 12 }}
+        onClick={handleEmailAuth}
+        disabled={loading}>
+        {loading ? "Loading..." : mode === "login" ? "Sign in" : "Sign up"}
+      </button>
+
+      <div className="login-switch">
+        {mode === "login" ? (
+          <>
+            Don't have an account?{" "}
             <button
-              onClick={handlePasswordReset}
-              disabled={loading}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#059669",
-                fontSize: 13,
-                cursor: "pointer",
-                padding: 0,
+              onClick={() => {
+                setMode("signup");
+                setEmail("");
+                setPassword("");
+                setConfirmPassword("");
+                setError("");
+                setMessage("");
               }}>
-              Forgot password?
-            </button>
-          </div>
+              Sign up
+            </button>{" "}
+          </>
+        ) : (
+          <>
+            Already have an account?{" "}
+            <button
+              onClick={() => {
+                setMode("login");
+                setEmail("");
+                setPassword("");
+                setConfirmPassword("");
+                setError("");
+                setMessage("");
+              }}>
+              Sign in
+            </button>{" "}
+          </>
         )}
-
-        {mode === "signup" && (
-          <input
-            className="login-input"
-            type="password"
-            placeholder="Confirm password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleEmailAuth()}
-            disabled={loading}
-          />
-        )}
-
-        {error && <div className="login-error">{error}</div>}
-        {message && <div className="login-message">{message}</div>}
-
-        <button
-          className="btn-primary"
-          style={{ width: "100%", marginTop: 12 }}
-          onClick={handleEmailAuth}
-          disabled={loading}>
-          {loading ? "Loading..." : mode === "login" ? "Sign in" : "Sign up"}
-        </button>
-
-        <div className="login-switch">
-          {mode === "login" ? (
-            <>
-              Don't have an account?{" "}
-              <button
-                onClick={() => {
-                  setMode("signup");
-                  setEmail("");
-                  setPassword("");
-                  setConfirmPassword("");
-                  setError("");
-                  setMessage("");
-                }}>
-                Sign up
-              </button>{" "}
-            </>
-          ) : (
-            <>
-              Already have an account?{" "}
-              <button
-                onClick={() => {
-                  setMode("login");
-                  setEmail("");
-                  setPassword("");
-                  setConfirmPassword("");
-                  setError("");
-                  setMessage("");
-                }}>
-                Sign in
-              </button>{" "}
-            </>
-          )}
-        </div>
       </div>
     </div>
   );

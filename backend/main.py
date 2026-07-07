@@ -7,6 +7,7 @@ import json
 import os
 import random
 import jwt
+import uuid
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -39,6 +40,17 @@ def get_user_id(authorization: str = Header(None)) -> str:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+def get_optional_user_id(authorization: Optional[str]) -> Optional[str]:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        token = authorization.split(" ")[1]
+        payload = jwt.decode(token, options={"verify_signature": False})
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 class NotesRequest(BaseModel):
     notes: str
     title: str = "Untitled Study Set"
@@ -60,6 +72,14 @@ class StatsRequest(BaseModel):
     cards_reviewed: int = 0
 
 
+class ImportRequest(BaseModel):
+    title: str
+    notes: str
+    summary: str
+    flashcards: list[dict]
+    quiz: list[dict]
+
+
 @app.get("/")
 @app.head("/")
 def root():
@@ -68,7 +88,8 @@ def root():
 
 @app.post("/generate")
 def generate_study_set(body: NotesRequest, authorization: Optional[str] = Header(None)):
-    user_id = get_user_id(authorization)
+    user_id = get_optional_user_id(authorization)
+
     if not body.notes.strip():
         raise HTTPException(status_code=400, detail="Notes cannot be empty")
 
@@ -113,30 +134,15 @@ Notes:
         )
         data = json.loads(response.choices[0].message.content)
 
-        study_set = supabase.table("study_sets").insert({
-            "title": body.title,
-            "notes": body.notes,
-            "summary": data["summary"],
-            "user_id": user_id
-        }).execute()
-
-        study_set_id = study_set.data[0]["id"]
-
-        flashcards_to_insert = [
-            {"study_set_id": study_set_id, "question": fc["q"], "answer": fc["a"], "position": i}
-            for i, fc in enumerate(data["flashcards"])
-        ]
-        supabase.table("flashcards").insert(flashcards_to_insert).execute()
-
-        quiz_to_insert = []
         shuffled_quiz = []
+        quiz_to_insert = []
+
         for i, q in enumerate(data["quiz"]):
             options = q["options"]
             correct_answer = options[q["correct"]]
             random.shuffle(options)
             new_correct_index = options.index(correct_answer)
             quiz_to_insert.append({
-                "study_set_id": study_set_id,
                 "question": q["q"],
                 "options": options,
                 "correct_index": new_correct_index,
@@ -147,7 +153,31 @@ Notes:
                 "options": options,
                 "correct": new_correct_index
             })
-        supabase.table("quiz_questions").insert(quiz_to_insert).execute()
+
+        if user_id:
+            study_set = supabase.table("study_sets").insert({
+                "title": body.title,
+                "notes": body.notes,
+                "summary": data["summary"],
+                "user_id": user_id
+            }).execute()
+
+            study_set_id = study_set.data[0]["id"]
+            created_at = study_set.data[0]["created_at"]
+
+            flashcards_to_insert = [
+                {"study_set_id": study_set_id, "question": fc["q"], "answer": fc["a"], "position": i}
+                for i, fc in enumerate(data["flashcards"])
+            ]
+            supabase.table("flashcards").insert(flashcards_to_insert).execute()
+
+            for item in quiz_to_insert:
+                item["study_set_id"] = study_set_id
+            supabase.table("quiz_questions").insert(quiz_to_insert).execute()
+
+        else:
+            study_set_id = str(uuid.uuid4())
+            created_at = None
 
         return {
             "id": study_set_id,
@@ -155,7 +185,7 @@ Notes:
             "summary": data["summary"],
             "flashcards": data["flashcards"],
             "quiz": shuffled_quiz,
-            "created_at": study_set.data[0]["created_at"],
+            "created_at": created_at,
             "notes": body.notes
         }
 
@@ -163,6 +193,40 @@ Notes:
         raise HTTPException(status_code=500, detail="AI returned invalid JSON")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/import")
+def import_deck(body: ImportRequest, authorization: Optional[str] = Header(None)):
+    user_id = get_user_id(authorization)
+
+    study_set = supabase.table("study_sets").insert({
+        "title": body.title,
+        "notes": body.notes,
+        "summary": body.summary,
+        "user_id": user_id
+    }).execute()
+
+    study_set_id = study_set.data[0]["id"]
+
+    flashcards_to_insert = [
+        {"study_set_id": study_set_id, "question": fc["q"], "answer": fc["a"], "position": i}
+        for i, fc in enumerate(body.flashcards)
+    ]
+    supabase.table("flashcards").insert(flashcards_to_insert).execute()
+
+    quiz_to_insert = [
+        {
+            "study_set_id": study_set_id,
+            "question": q["q"],
+            "options": q["options"],
+            "correct_index": q["correct"],
+            "position": i
+        }
+        for i, q in enumerate(body.quiz)
+    ]
+    supabase.table("quiz_questions").insert(quiz_to_insert).execute()
+
+    return {"status": "imported", "id": study_set_id}
 
 
 @app.get("/study-sets")
@@ -241,12 +305,9 @@ def get_stats(study_set_id: str, authorization: Optional[str] = Header(None)):
         "total_cards_revealed": sum(d["cards_reviewed"] for d in data)
     }
 
+
 @app.delete("/account")
 def delete_account(authorization: Optional[str] = Header(None)):
     user_id = get_user_id(authorization)
-
-    # Deleting the auth user automatically cascades to delete all their study_sets,
-    # which in turn cascades to flashcards/quiz_questions/deck_stats via study_set_id
     supabase.auth.admin.delete_user(user_id)
-
     return {"status": "account deleted"}

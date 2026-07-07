@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { getDeckStats } from "../api/claude";
+import { getGuestDeckStats } from "../guestStorage";
 
-export default function StatsTab({ deckId, lastUpdated }) {
+export default function StatsTab({ deckId, lastUpdated, isGuest }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -9,7 +10,9 @@ export default function StatsTab({ deckId, lastUpdated }) {
     async function fetchStats() {
       setLoading(true);
       try {
-        const data = await getDeckStats(deckId);
+        const data = isGuest
+          ? getGuestDeckStats(deckId)
+          : await getDeckStats(deckId);
         setStats(data);
       } catch (e) {
         console.error(e);
@@ -27,6 +30,12 @@ export default function StatsTab({ deckId, lastUpdated }) {
       </div>
     );
 
+  if (!stats)
+    return (
+      <div className="empty-sub" style={{ padding: "2rem" }}>
+        No stats yet.
+      </div>
+    );
   return (
     <div className="stats-view">
       <div className="stats-grid">

@@ -3,8 +3,9 @@ import FlashcardsTab from "./FlashcardsTab";
 import QuizTab from "./QuizTab";
 import StatsTab from "./StatsTab";
 import { recordStats } from "../api/claude";
+import { recordGuestStats } from "../guestStorage";
 
-export default function StudyView({ deck, onStatsRecorded }) {
+export default function StudyView({ deck, onStatsRecorded, isGuest }) {
   const [activeTab, setActiveTab] = useState("flashcards");
   const [statsKey, setStatsKey] = useState(0);
 
@@ -14,7 +15,11 @@ export default function StudyView({ deck, onStatsRecorded }) {
 
   async function handleScore(pct) {
     try {
-      await recordStats(deck.id, pct, 0);
+      if (isGuest) {
+        recordGuestStats(deck.id, pct);
+      } else {
+        await recordStats(deck.id, pct, 0);
+      }
       if (onStatsRecorded) onStatsRecorded();
       setStatsKey((prev) => prev + 1);
     } catch (e) {
@@ -71,7 +76,7 @@ export default function StudyView({ deck, onStatsRecorded }) {
           <QuizTab quiz={deck.quiz} onScore={handleScore} />
         </div>
         <div style={{ display: activeTab === "stats" ? "block" : "none" }}>
-          <StatsTab deckId={deck.id} lastUpdated={statsKey} />
+          <StatsTab deckId={deck.id} lastUpdated={statsKey} isGuest={isGuest} />
         </div>
         <div style={{ display: activeTab === "notes" ? "block" : "none" }}>
           <div className="notes-view">

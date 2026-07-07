@@ -50,6 +50,7 @@ export default function CreateDeck({
     if (onGeneratingChange) onGeneratingChange(true);
     try {
       const result = await generateStudySet(notes, title.trim());
+      console.log(JSON.stringify(result));
       onDeckCreated({ ...result, notes });
     } catch (e) {
       if (e.message.includes("fetch") || e.message.includes("Failed")) {

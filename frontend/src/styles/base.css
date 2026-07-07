@@ -235,6 +235,24 @@ body.dark .user-menu-item-danger {
   color: #dc2626;
 }
 
+.nav-signin-btn {
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  color: white;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.nav-signin-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

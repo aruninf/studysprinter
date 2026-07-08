@@ -6,6 +6,23 @@ Turn your notes into flashcards and quizzes instantly.
 
 StudySprinter is a full-stack AI study app. Paste in your notes, and it generates a set of flashcards, a multiple-choice quiz, and a summary for you to study from. Use it instantly as a guest with example decks, or sign in for your own private account with saved decks, progress, and stats.
 
+## Screenshots
+
+**Paste your notes and generate a study set**
+![Topic input](./screenshots/topic-input.png)
+
+**Review your AI-generated flashcard deck**
+![Flashcards](./screenshots/flashcards.png)
+
+**Take a quiz, with shuffled questions on every attempt**
+![Quiz](./screenshots/quiz.png)
+
+**Track your progress across decks**
+![Stats](./screenshots/stats.png)
+
+**Revisit your original notes alongside the generated content**
+![Notes](./screenshots/notes.png)
+
 ## Features
 
 - AI-generated flashcards, quizzes, and summaries from pasted notes (OpenAI GPT-4)

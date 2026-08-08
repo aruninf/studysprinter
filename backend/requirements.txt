@@ -28,7 +28,7 @@ MarkupSafe==3.0.3
 mdurl==0.1.2
 mmh3==5.2.1
 multidict==6.7.1
-openai==1.35.0
+openai>=1.54.0,<2.0.0
 orjson==3.11.9
 packaging==26.2
 postgrest==2.30.0

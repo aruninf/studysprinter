@@ -180,7 +180,7 @@ async def call_openai_with_retry(notes: str, max_retries: int = 3) -> StudySetRe
     logger.error(f"Generation failed after {max_retries} attempts: {last_error}")
     raise HTTPException(
         status_code=502,
-        detail="Study set generation failed. Please try again."
+        detail="We couldn't generate a study set from these notes. Try adding more specific, factual content, or try again in a moment."
     )
 
 
@@ -190,6 +190,9 @@ async def generate_study_set(body: NotesRequest, authorization: Optional[str] = 
 
     if not body.notes.strip():
         raise HTTPException(status_code=400, detail="Notes cannot be empty")
+
+    if len(body.notes.strip()) < 300:
+        raise HTTPException(status_code=400, detail="Notes must be at least 300 characters for a good study set.")
 
     # This raises HTTPException(502) internally on failure, which FastAPI
     # will propagate as-is (see the except HTTPException passthrough below).

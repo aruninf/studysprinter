@@ -1,3 +1,5 @@
+Hi, Anna , 
+Can you check Sign up/sign in not working - connect me if possible ?
 # StudySprinter
 
 Turn your notes into flashcards and quizzes instantly.
